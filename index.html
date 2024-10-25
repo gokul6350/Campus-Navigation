@@ -19,6 +19,15 @@
 
         body {
             background-color: #f5f5f5;
+            margin: 0 auto;
+            overflow-x: hidden;
+        }
+
+        /* Apply mobile-like width only for larger screens */
+        @media (min-width: 768px) {
+            body {
+                width: 375px; /* Typical mobile width */
+            }
         }
 
         .main-screen, .navigation-screen, .map-screen {
