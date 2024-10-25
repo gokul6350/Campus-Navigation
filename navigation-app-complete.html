@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sathyabama Navigation App</title>
+    <!-- Add favicon -->
+    <link rel="icon" type="image/x-icon" href="OIP.jpg">
+    <!-- Add Leaflet CSS and JS -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: system-ui, -apple-system, sans-serif;
+        }
+
+        body {
+            background-color: #f5f5f5;
+        }
+
+        .main-screen, .navigation-screen, .map-screen {
+            display: none;
+            height: 100vh;
+            background: white;
+        }
+
+        .active {
+            display: block;
+        }
+
+        .header {
+            background-color: #1e3a8a;
+            padding: 1rem;
+            color: white;
+            border-radius: 0 0 1.5rem 1.5rem;
+            position: relative;
+            height: 160px;
+        }
+
+        .header-icons {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 1rem;
+        }
+
+        .profile-circle {
+            width: 96px;
+            height: 96px;
+            background-color: #ffffff; /* Fallback color */
+            border-radius: 50%;
+            position: absolute;
+            bottom: -48px;
+            left: 50%;
+            transform: translateX(-50%);
+            border: 4px solid white;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            background-image: url('OIP.jpg');
+            background-size: contain; /* Changed from cover to contain */
+            background-position: center;
+            background-repeat: no-repeat; /* Ensure the image doesn't repeat */
+        }
+
+        .title {
+            text-align: center;
+            margin-top: 64px;
+            padding: 1rem;
+            font-size: 1.25rem;
+            color: #333;
+        }
+
+        .menu-item {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            margin: 1rem;
+            padding: 1rem;
+            background: #eff6ff;
+            border: none;
+            border-radius: 12px;
+            cursor: pointer;
+            width: calc(100% - 2rem);
+        }
+
+        .icon-box {
+            background: white;
+            padding: 0.5rem;
+            border-radius: 8px;
+        }
+
+        /* Navigation Screen Styles */
+        .nav-header {
+            background: #1e3a8a;
+            color: white;
+            padding: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .nav-content {
+            padding: 2rem;
+        }
+
+        .input-group {
+            margin-bottom: 1.5rem;
+        }
+
+        .input-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            color: #333;
+        }
+
+        select {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            font-size: 1rem;
+            background: white;
+        }
+
+        .navigate-btn {
+            width: 100%;
+            padding: 1rem;
+            background: #1e3a8a;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            cursor: pointer;
+            margin-top: 1rem;
+        }
+
+        .back-btn {
+            background: none;
+            border: none;
+            color: white;
+            cursor: pointer;
+            padding: 0.5rem;
+        }
+
+        /* Map Screen Styles */
+        .map-screen {
+            position: relative;
+            height: 100vh;
+        }
+
+        #map {
+            height: 100%;
+            width: 100%;
+        }
+
+        .map-back-btn {
+            position: absolute;
+            top: 1rem;
+            left: 1rem;
+            z-index: 1000;
+            background: #1e3a8a;
+            color: white;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <!-- Main Screen -->
+    <div class="main-screen active" id="mainScreen">
+        <div class="header">
+            <div class="header-icons">
+                <span>←</span>
+                <span>⚙️</span>
+            </div>
+            <div class="profile-circle"></div>
+        </div>
+        
+        <h1 class="title">Sathyabama Navigation App</h1>
+        
+        <button class="menu-item" onclick="showMap()">
+            <div class="icon-box">🗺️</div>
+            <span>Explore Campus Map</span>
+        </button>
+        
+        <button class="menu-item" onclick="showNavigation()">
+            <div class="icon-box">📍</div>
+            <span>Campus Navigation</span>
+        </button>
+        
+        <button class="menu-item">
+            <div class="icon-box">📷</div>
+            <span>Scan QR</span>
+        </button>
+    </div>
+
+    <!-- Navigation Screen -->
+    <div class="navigation-screen" id="navigationScreen">
+        <div class="nav-header">
+            <button class="back-btn" onclick="hideNavigation()">←</button>
+            <h2>Campus Navigation</h2>
+        </div>
+        
+        <div class="nav-content">
+            <div class="input-group">
+                <label>Source Location</label>
+                <select id="source">
+                    <option value="">Select source</option>
+                    <option value="current">My Current Location</option>
+                    <option value="main-gate">Main Gate</option>
+                    <option value="library">Library</option>
+                    <option value="admin">Admin Block</option>
+                    <option value="canteen">Canteen</option>
+                    <option value="hostel">Hostel</option>
+                </select>
+            </div>
+            
+            <div class="input-group">
+                <label>Destination</label>
+                <select id="destination">
+                    <option value="">Select destination</option>
+                    <option value="main-gate">Main Gate</option>
+                    <option value="library">Library</option>
+                    <option value="admin">Admin Block</option>
+                    <option value="canteen">Canteen</option>
+                    <option value="hostel">Hostel</option>
+                </select>
+            </div>
+            
+            <button class="navigate-btn" onclick="startNavigation()">
+                Start Navigation
+            </button>
+        </div>
+    </div>
+
+    <!-- Map Screen -->
+    <div class="map-screen" id="mapScreen">
+        <button class="map-back-btn" onclick="hideMap()">← Back</button>
+        <div id="map"></div>
+    </div>
+
+    <script>
+        // Get screen elements
+        const mainScreen = document.getElementById('mainScreen');
+        const navigationScreen = document.getElementById('navigationScreen');
+        const mapScreen = document.getElementById('mapScreen');
+
+        // Initialize map
+        let map = null;
+
+        // Navigation functions
+        function showNavigation() {
+            mainScreen.classList.remove('active');
+            navigationScreen.classList.add('active');
+        }
+
+        function hideNavigation() {
+            navigationScreen.classList.remove('active');
+            mainScreen.classList.add('active');
+        }
+
+        function showMap() {
+            mainScreen.classList.remove('active');
+            mapScreen.classList.add('active');
+            
+            // Initialize map if not already done
+            if (!map) {
+                map = L.map('map').setView([12.8726, 80.2230], 16);
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    maxZoom: 19,
+                    attribution: '© OpenStreetMap contributors'
+                }).addTo(map);
+
+                // Add marker for Sathyabama University
+                L.marker([12.8726, 80.2230])
+                    .addTo(map)
+                    .bindPopup('Sathyabama Institute of Science and Technology')
+                    .openPopup();
+            }
+            
+            // Force map to update its container size
+            setTimeout(() => {
+                map.invalidateSize();
+            }, 100);
+        }
+
+        function hideMap() {
+            mapScreen.classList.remove('active');
+            mainScreen.classList.add('active');
+        }
+
+        function startNavigation() {
+            const source = document.getElementById('source').value;
+            const destination = document.getElementById('destination').value;
+            
+            if (!source || !destination) {
+                alert('Please select both source and destination');
+                return;
+            }
+
+            if (source === 'current') {
+                if ("geolocation" in navigator) {
+                    navigator.geolocation.getCurrentPosition(function(position) {
+                        alert('Location accessed! Ready to navigate.');
+                    }, function(error) {
+                        alert('Error getting location: ' + error.message);
+                    });
+                } else {
+                    alert('Location services not available');
+                }
+            } else {
+                alert('Navigation started from ' + source + ' to ' + destination);
+            }
+        }
+    </script>
+</body>
+</html>
