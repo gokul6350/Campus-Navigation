@@ -1,10 +1,10 @@
 {
   "expo": {
-    "name": "silverlake",
+    "name": "Sathyabama Navigation App",
     "slug": "silverlake",
-    "version": "1.0.0",
+    "version": "1.2.1",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/logo.jpg",
     "scheme": "myapp",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
@@ -22,7 +22,7 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "foregroundImage": "./assets/images/logo.jpg",
         "backgroundColor": "#ffffff"
       },
       "permissions": [
@@ -37,7 +37,8 @@
           "useEmbedded": true,
           "apiKey": "YOUR_GOOGLE_MAPS_API_KEY"
         }
-      }
+      },
+      "assets": ["assets/debug-map.html"]
     },
     "web": {
       "bundler": "metro",
@@ -74,7 +75,8 @@
       },
       "eas": {
         "projectId": "6580accf-bb34-4af8-90ec-ad95b43b7cfa"
-      }
+      },
+      "author": "gokulbarath"
     }
   }
 }
