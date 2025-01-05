@@ -15,21 +15,16 @@ export default function Index() {
       <View style={styles.navigationContainer}>
         <Link href="/explore" asChild>
           <TouchableOpacity style={styles.navButton}>
-            <Text style={styles.navText}>Interactive Campus Map</Text>
+            <Text style={styles.navText}>Campus Navigation</Text>
           </TouchableOpacity>
         </Link>
 
-        <Link href="/offline-maps" asChild>
+        <Link href="/3d-map" asChild>
           <TouchableOpacity style={styles.navButton}>
-            <Text style={styles.navText}>Offline Navigation</Text>
+            <Text style={styles.navText}>3D Map</Text>
           </TouchableOpacity>
         </Link>
 
-        <Link href="/navigation-campus" asChild>
-          <TouchableOpacity style={styles.navButton}>
-            <Text style={styles.navText}>Campus Directory</Text>
-          </TouchableOpacity>
-        </Link>
 
         <Link href="/debug" asChild>
           <TouchableOpacity style={[styles.navButton, styles.debugButton]}>

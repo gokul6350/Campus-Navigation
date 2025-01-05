@@ -5,35 +5,28 @@ import { Stack } from 'expo-router';
 import SearchableDropdown from 'react-native-searchable-dropdown';
 import * as Location from 'expo-location';
 import { useNavigation } from '@react-navigation/native';
+import { locations, displayNames } from './config/locations';
 
 export default function ExploreMap() {
   const navigation = useNavigation();
-  const [source, setSource] = useState('Block2');
-  const [destination, setDestination] = useState('CentreForAdvancedStudies');
+  const [source, setSource] = useState<string>('Block2');
+  const [destination, setDestination] = useState<string>('CentreForAdvancedStudies');
   const [currentLocation, setCurrentLocation] = useState(null);
   const [location, setLocation] = useState<Location.LocationObject | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isSearchModalVisible, setIsSearchModalVisible] = useState(false);
   const [activeSearchType, setActiveSearchType] = useState(null); // 'source' or 'destination'
   const webViewRef = useRef(null);
+  const [isWithinBounds, setIsWithinBounds] = useState(false);
 
-  const locations = {
-    Library: [12.873582943873872, 80.21921784197703],
-    Canteen: [12.872502, 80.219496],
-    AdminBlock: [12.873147339012304, 80.22180918077176],
-    Block1: [12.87388781717391, 80.2214368051665],
-    Block2: [12.87279953771407, 80.2208933391326],
-    CentreForAdvancedStudies: [12.871388230107986, 80.22526689609808],
-  };
-
-  const displayNames = {
-    Library: 'Library',
-    Canteen: 'Canteen',
-    AdminBlock: 'Admin Block',
-    Block1: 'Block 1',
-    Block2: 'Block 2',
-    CentreForAdvancedStudies: 'Centre for Advanced Studies',
-    CurrentLocation: 'Current Location',
+  const isPointWithinBounds = (lat: number, lng: number) => {
+    const bounds = [
+      [12.882300720316172, 80.21333939608719], // North East
+      [12.864758610349512, 80.22775364730131]  // South West
+    ];
+    
+    return lat <= bounds[0][0] && lat >= bounds[1][0] &&
+           lng >= bounds[0][1] && lng <= bounds[1][1];
   };
 
   const getCurrentLocation = async () => {
@@ -44,8 +37,19 @@ export default function ExploreMap() {
     }
 
     let currentLocation = await Location.getCurrentPositionAsync({});
-    setCurrentLocation([currentLocation.coords.latitude, currentLocation.coords.longitude]);
-    setSource('CurrentLocation');
+    const coords = [currentLocation.coords.latitude, currentLocation.coords.longitude];
+    setCurrentLocation(coords);
+    
+    // Check if location is within bounds
+    const withinBounds = isPointWithinBounds(coords[0], coords[1]);
+    setIsWithinBounds(withinBounds);
+    
+    if (withinBounds) {
+      setSource('CurrentLocation');
+    } else {
+      // Optionally show an alert that user is outside campus
+      alert('You are currently outside the campus boundaries');
+    }
   };
 
   useEffect(() => {
@@ -75,8 +79,6 @@ export default function ExploreMap() {
   const updateRoute = useCallback(() => {
     if (!webViewRef.current || !source || !destination) return;
     
-    console.log('Updating route:', { source, destination }); // IDE log
-
     const jsCode = `
       (function() {
         // Add the decode polyline function
@@ -129,14 +131,25 @@ export default function ExploreMap() {
 
         showDebug('Updating route...');
         try {
-          // Store the current map center and zoom before updating
-          const currentCenter = map.getCenter();
-          const currentZoom = map.getZoom();
-
+          // Update current location marker if within bounds
+          ${isWithinBounds && currentLocation ? `
+            updateCurrentLocationMarker([${currentLocation[0]}, ${currentLocation[1]}]);
+          ` : ''}
+          
           const sourceCoords = '${source}' === 'CurrentLocation' ? 
             ${JSON.stringify(currentLocation)} : 
             ${JSON.stringify(locations[source])};
           const destCoords = ${JSON.stringify(locations[destination])};
+
+          // Update source and destination markers
+          updateSourceDestinationMarkers(
+            sourceCoords,
+            destCoords
+          );
+
+          // Store the current map center and zoom before updating
+          const currentCenter = map.getCenter();
+          const currentZoom = map.getZoom();
 
           showDebug('Coordinates - Source: ' + JSON.stringify(sourceCoords) + ', Dest: ' + JSON.stringify(destCoords));
 
@@ -207,7 +220,7 @@ export default function ExploreMap() {
     `;
 
     webViewRef.current.injectJavaScript(jsCode);
-  }, [source, destination, currentLocation, locations]);
+  }, [source, destination, currentLocation, isWithinBounds]);
 
   useEffect(() => {
     console.log('Source or destination changed:', { source, destination });
@@ -232,13 +245,58 @@ export default function ExploreMap() {
             height: 100%;
             overflow: hidden;
           }
+          
+          .current-location-marker {
+            background-color: #2196F3;
+            border: 3px solid white;
+            border-radius: 50%;
+            box-shadow: 0 0 10px rgba(0,0,0,0.5);
+            width: 16px;
+            height: 16px;
+          }
+
+          .source-marker {
+            background-color: #2196F3;
+            border: 3px solid white;
+            border-radius: 50%;
+            box-shadow: 0 0 10px rgba(0,0,0,0.5);
+            width: 16px;
+            height: 16px;
+          }
+
+          .destination-marker {
+            position: relative;
+            width: 24px;
+            height: 24px;
+            background-color: #4CAF50;
+            border-radius: 50% 50% 0 50%;
+            transform: rotate(45deg);
+            box-shadow: 0 0 10px rgba(0,0,0,0.3);
+            border: 3px solid white;
+          }
+
+          .destination-marker::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 8px;
+            height: 8px;
+            background-color: white;
+            border-radius: 50%;
+          }
         </style>
+        
       </head>
       <body>
         <div id="map"></div>
         <script>
           let map;
           let currentRoute;
+          let currentLocationMarker = null;
+          let sourceMarker = null;
+          let destinationMarker = null;
 
           async function sendToDiscord(message) {
             try {
@@ -258,7 +316,8 @@ export default function ExploreMap() {
 
           function showDebug(message) {
             sendToDiscord(message);
-          }
+    
+            }
 
           showDebug('Map initialization started');
           
@@ -274,12 +333,85 @@ export default function ExploreMap() {
             maxBoundsViscosity: 1.0
           }).setView([12.8741, 80.2234], 17);
 
+          // Add zoom end event listener to check and reset zoom
+          map.on('zoomend', function() {
+            const currentZoom = map.getZoom();
+            if (currentZoom > 19 || map.getContainer().innerHTML === '') {
+              // If zoom is too high or map is blank, reset to safe zoom level
+              map.setZoom(17);
+              showDebug('Map zoom reset to safe level');
+            }
+          });
+
+          // Add error event listener
+          map.on('error', function(e) {
+            showDebug('Map error occurred: ' + e.message);
+            // Reset the map view
+            map.setView([12.8741, 80.2234], 17);
+          });
+
           var OPNVKarte = L.tileLayer('https://tileserver.memomaps.de/tilegen/{z}/{x}/{y}.png', {
-            maxZoom: 19
+            maxZoom: 19,
+            errorTileUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=' // Transparent pixel for missing tiles
           }).addTo(map);
 
+          // Add tile error handling
+          OPNVKarte.on('tileerror', function(e) {
+            showDebug('Tile loading error, resetting zoom');
+            map.setZoom(17);
+          });
+
           window.map = map;
-          showDebug('Map created');
+          showDebug('Map created with error handlers');
+
+          function updateCurrentLocationMarker(coords) {
+            if (currentLocationMarker) {
+              map.removeLayer(currentLocationMarker);
+            }
+            
+            const markerElement = document.createElement('div');
+            markerElement.className = 'current-location-marker';
+            
+            currentLocationMarker = L.marker(coords, {
+              icon: L.divIcon({
+                className: 'current-location-marker-wrapper',
+                html: markerElement,
+                iconSize: [16, 16],
+                iconAnchor: [8, 8]
+              })
+            }).addTo(map);
+          }
+
+          function createCustomMarker(className) {
+            const markerElement = document.createElement('div');
+            markerElement.className = className;
+            return L.divIcon({
+              className: className + '-wrapper',
+              html: markerElement,
+              iconSize: [16, 16],
+              iconAnchor: [8, 8]
+            });
+          }
+
+          function updateSourceDestinationMarkers(sourceCoords, destCoords) {
+            // Remove existing markers
+            if (sourceMarker) map.removeLayer(sourceMarker);
+            if (destinationMarker) map.removeLayer(destinationMarker);
+
+            // Add source marker (if not current location)
+            if (sourceCoords) {
+              sourceMarker = L.marker(sourceCoords, {
+                icon: createCustomMarker('source-marker')
+              }).addTo(map);
+            }
+
+            // Add destination marker
+            if (destCoords) {
+              destinationMarker = L.marker(destCoords, {
+                icon: createCustomMarker('destination-marker')
+              }).addTo(map);
+            }
+          }
         </script>
       </body>
     </html>
