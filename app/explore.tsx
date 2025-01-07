@@ -19,6 +19,37 @@ export default function ExploreMap() {
   const webViewRef = useRef(null);
   const [isWithinBounds, setIsWithinBounds] = useState(false);
 
+  const handleCurrentLocationSelect = useCallback(() => {
+    if (!webViewRef.current) return;
+
+    const resetScript = `
+      (function() {
+        // Clear all existing routes and markers
+        if (map) {
+          // Remove all layers except the base tile layer
+          map.eachLayer((layer) => {
+            if (!(layer instanceof L.TileLayer)) {
+              map.removeLayer(layer);
+            }
+          });
+
+          // Reset all tracking variables
+          currentRoute = null;
+          currentLocationMarker = null;
+          sourceMarker = null;
+          destinationMarker = null;
+          allRoutes = [];
+
+          // Center map on campus
+          map.setView([12.8741, 80.2234], 17);
+        }
+        return true;
+      })();
+    `;
+
+    webViewRef.current.injectJavaScript(resetScript);
+  }, []);
+
   const isPointWithinBounds = (lat: number, lng: number) => {
     const bounds = [
       [12.882300720316172, 80.21333939608719], // North East
@@ -33,22 +64,33 @@ export default function ExploreMap() {
     let { status } = await Location.requestForegroundPermissionsAsync();
     if (status !== 'granted') {
       setErrorMsg('Permission to access location was denied');
+      alert('Location permission is required to use current location');
       return;
     }
 
-    let currentLocation = await Location.getCurrentPositionAsync({});
+    try {
+      // Reset routes before getting new location
+      handleCurrentLocationSelect();
+
+      let currentLocation = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.High
+      });
     const coords = [currentLocation.coords.latitude, currentLocation.coords.longitude];
     setCurrentLocation(coords);
     
-    // Check if location is within bounds
     const withinBounds = isPointWithinBounds(coords[0], coords[1]);
     setIsWithinBounds(withinBounds);
     
     if (withinBounds) {
       setSource('CurrentLocation');
+        // Route will be updated by the useEffect watching source
     } else {
-      // Optionally show an alert that user is outside campus
       alert('You are currently outside the campus boundaries');
+        setSource('Block2');
+      }
+    } catch (error) {
+      console.error('Error getting location:', error);
+      alert('Failed to get current location. Please try again.');
     }
   };
 
@@ -81,6 +123,24 @@ export default function ExploreMap() {
     
     const jsCode = `
       (function() {
+        // Reset everything first
+        if (map) {
+          // Remove all layers from the map
+          map.eachLayer((layer) => {
+            if (!(layer instanceof L.TileLayer)) {
+              map.removeLayer(layer);
+            }
+          });
+          
+          // Reset variables
+          currentRoute = null;
+          currentLocationMarker = null;
+          sourceMarker = null;
+          destinationMarker = null;
+          allRoutes = [];
+        }
+
+        try {
         // Add the decode polyline function
         function decodePolyline(str) {
           var index = 0,
@@ -128,93 +188,69 @@ export default function ExploreMap() {
 
           return coordinates;
         }
-
-        showDebug('Updating route...');
-        try {
-          // Update current location marker if within bounds
-          ${isWithinBounds && currentLocation ? `
-            updateCurrentLocationMarker([${currentLocation[0]}, ${currentLocation[1]}]);
-          ` : ''}
           
           const sourceCoords = '${source}' === 'CurrentLocation' ? 
             ${JSON.stringify(currentLocation)} : 
             ${JSON.stringify(locations[source])};
           const destCoords = ${JSON.stringify(locations[destination])};
 
-          // Update source and destination markers
-          updateSourceDestinationMarkers(
-            sourceCoords,
-            destCoords
-          );
-
-          // Store the current map center and zoom before updating
-          const currentCenter = map.getCenter();
-          const currentZoom = map.getZoom();
-
-          showDebug('Coordinates - Source: ' + JSON.stringify(sourceCoords) + ', Dest: ' + JSON.stringify(destCoords));
-
-          // Clear existing route if any
-          if (window.currentRoute) {
-            map.removeControl(window.currentRoute);
-            window.currentRoute = null;
+          // Add new markers
+          if (sourceCoords) {
+            sourceMarker = L.marker(sourceCoords, {
+              icon: createCustomMarker('source-marker')
+            }).addTo(map);
           }
 
-          // Create new route using Ola Maps API
+          if (destCoords) {
+            destinationMarker = L.marker(destCoords, {
+              icon: createCustomMarker('destination-marker')
+            }).addTo(map);
+          }
+
+          // Add current location marker if within bounds
+          ${isWithinBounds && currentLocation ? `
+            currentLocationMarker = L.marker([${currentLocation[0]}, ${currentLocation[1]}], {
+              icon: createCustomMarker('current-location-marker')
+            }).addTo(map);
+          ` : ''}
+
+          // Create new route
           const sourceStr = \`\${sourceCoords[0]}%2C\${sourceCoords[1]}\`;
           const destStr = \`\${destCoords[0]}%2C\${destCoords[1]}\`;
 
-          sendToDiscord(\`Making request with: \${sourceStr} to \${destStr}\`);
-
           fetch(\`https://api.olamaps.io/routing/v1/directions?origin=\${sourceStr}&destination=\${destStr}&mode=walking&alternatives=false&steps=true&overview=full&language=en&traffic_metadata=false&api_key=JSldpyI1lvyHaDcM461nEj60xKbxRR39ObU8R3Gy\`, {
             method: 'POST',
-            headers: {
-              'accept': 'application/json'
-            },
+            headers: { 'accept': 'application/json' },
             body: ''
           })
           .then(response => {
-            sendToDiscord(\`Response status: \${response.status}, \${response.statusText}\`);
-            if (!response.ok) {
-              throw new Error(\`HTTP error! status: \${response.status}\`);
-            }
+            if (!response.ok) throw new Error(\`HTTP error! status: \${response.status}\`);
             return response.json();
           })
           .then(data => {
-            // Send full API response to Discord
-            sendToDiscord(\`Ola Maps API Response: \${JSON.stringify(data, null, 2)}\`);
-
             if (data.status === 'SUCCESS') {
-              const route = data.routes[0];
-              // Send route-specific data to Discord
-              sendToDiscord(\`Route being used: \${JSON.stringify(route, null, 2)}\`);
-              
-              const coordinates = decodePolyline(route.overview_polyline);
-              
-              window.currentRoute = L.polyline(coordinates, {
+              const coordinates = decodePolyline(data.routes[0].overview_polyline);
+              currentRoute = L.polyline(coordinates, {
                 color: '#0066CC',
                 opacity: 0.8,
                 weight: 6
               }).addTo(map);
 
-              map.fitBounds(window.currentRoute.getBounds());
-              map.setView(currentCenter, currentZoom);
-              
-              showDebug('Walking route added');
+              map.fitBounds(currentRoute.getBounds(), {
+                padding: [50, 50]
+              });
             } else {
-              sendToDiscord(\`Route calculation failed: \${JSON.stringify(data, null, 2)}\`);
               throw new Error('Route calculation failed');
             }
           })
           .catch(error => {
-            sendToDiscord(\`Error in route calculation: \${error.toString()} - \${error.message}\`);
-            showDebug('Error updating route: ' + error.message);
+            console.error('Route error:', error.message);
           });
 
-          true;
+          return true;
         } catch (error) {
-          showDebug('Error updating route: ' + error.message);
-          console.error(error);
-          false;
+          console.error('Error:', error.message);
+          return false;
         }
       })();
     `;
@@ -247,19 +283,41 @@ export default function ExploreMap() {
           }
           
           .current-location-marker {
-            background-color: #2196F3;
-            border: 3px solid white;
+            position: relative;
+            width: 24px;
+            height: 24px;
+            background-color: transparent;
+          }
+
+          .current-location-marker::before {
+            content: '';
+            position: absolute;
+            width: 24px;
+            height: 24px;
+            background-color: #4285F4;
             border-radius: 50%;
-            box-shadow: 0 0 10px rgba(0,0,0,0.5);
-            width: 16px;
-            height: 16px;
+            opacity: 0.2;
+          }
+
+          .current-location-marker::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 12px;
+            height: 12px;
+            background-color: white;
+            border: 3px solid #4285F4;
+            border-radius: 50%;
+            box-shadow: 0 0 0 2px rgba(66, 133, 244, 0.2);
           }
 
           .source-marker {
-            background-color: #2196F3;
+            background-color: #4285F4;
             border: 3px solid white;
             border-radius: 50%;
-            box-shadow: 0 0 10px rgba(0,0,0,0.5);
+            box-shadow: 0 0 10px rgba(0,0,0,0.2);
             width: 16px;
             height: 16px;
           }
@@ -268,10 +326,10 @@ export default function ExploreMap() {
             position: relative;
             width: 24px;
             height: 24px;
-            background-color: #4CAF50;
+            background-color: #4285F4;
             border-radius: 50% 50% 0 50%;
             transform: rotate(45deg);
-            box-shadow: 0 0 10px rgba(0,0,0,0.3);
+            box-shadow: 0 0 10px rgba(0,0,0,0.2);
             border: 3px solid white;
           }
 
@@ -293,10 +351,38 @@ export default function ExploreMap() {
         <div id="map"></div>
         <script>
           let map;
-          let currentRoute;
+          let currentRoute = null;
           let currentLocationMarker = null;
           let sourceMarker = null;
           let destinationMarker = null;
+          let allRoutes = []; // Array to track all routes
+
+          // Function to clear all routes and markers
+          function clearAllRoutesAndMarkers() {
+            // Clear routes
+            if (allRoutes.length > 0) {
+              allRoutes.forEach(route => {
+                if (route) {
+                  map.removeLayer(route);
+                }
+              });
+              allRoutes = [];
+            }
+            
+            // Clear markers
+            if (currentLocationMarker) {
+              map.removeLayer(currentLocationMarker);
+              currentLocationMarker = null;
+            }
+            if (sourceMarker) {
+              map.removeLayer(sourceMarker);
+              sourceMarker = null;
+            }
+            if (destinationMarker) {
+              map.removeLayer(destinationMarker);
+              destinationMarker = null;
+            }
+          }
 
           async function sendToDiscord(message) {
             try {
@@ -388,15 +474,13 @@ export default function ExploreMap() {
             return L.divIcon({
               className: className + '-wrapper',
               html: markerElement,
-              iconSize: [16, 16],
-              iconAnchor: [8, 8]
+              iconSize: className === 'current-location-marker' ? [24, 24] : [16, 16],
+              iconAnchor: className === 'current-location-marker' ? [12, 12] : [8, 8]
             });
           }
 
           function updateSourceDestinationMarkers(sourceCoords, destCoords) {
-            // Remove existing markers
-            if (sourceMarker) map.removeLayer(sourceMarker);
-            if (destinationMarker) map.removeLayer(destinationMarker);
+            clearAllRoutesAndMarkers(); // Clear everything before adding new markers
 
             // Add source marker (if not current location)
             if (sourceCoords) {
@@ -417,10 +501,13 @@ export default function ExploreMap() {
     </html>
   `;
 
-  const locationItems = Object.keys(locations).map((key) => ({
+  const locationItems = [
+    { id: 'CurrentLocation', name: 'Current Location' },
+    ...Object.keys(locations).map((key) => ({
     id: key,
     name: displayNames[key],
-  }));
+    }))
+  ];
 
   const openSearchModal = (type) => {
     setActiveSearchType(type);
@@ -493,14 +580,10 @@ export default function ExploreMap() {
             
             <SearchableDropdown
               onItemSelect={(item) => {
-                if (activeSearchType === 'source') {
                   if (item.id === 'CurrentLocation') {
                     getCurrentLocation();
                   } else {
                     setSource(item.id);
-                  }
-                } else {
-                  setDestination(item.id);
                 }
                 setIsSearchModalVisible(false);
               }}
